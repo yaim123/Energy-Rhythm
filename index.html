@@ -68,6 +68,35 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 #lmBar{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#3ee6ff,#ffd23e);transition:width .25s}
 .lm.err .lm-bar{display:none}
 .lm.err .lm-body{filter:hue-rotate(-40deg) saturate(.8)}
+/* 화면보다 내용이 길어도 위쪽이 잘리지 않고 스크롤되도록(짧으면 가운데 정렬 유지) */
+.ov{justify-content:flex-start}
+.ov>:first-child{margin-top:auto}
+.ov>:last-child{margin-bottom:auto}
+/* 타이틀: 왼쪽 곡 선택 + 오른쪽 랭킹 (좁은 화면에서는 아래로 내려감) */
+#titleOv{justify-content:flex-start}
+.twrap{margin:auto;display:flex;align-items:center;justify-content:center;gap:28px;flex-wrap:wrap;width:100%}
+.tmain{display:flex;flex-direction:column;align-items:center;gap:12px;min-width:0}
+.lb{width:min(300px,94vw);padding:14px 14px 10px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);text-align:left}
+.lb-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.lb-head b{font-size:16px}
+.lb-tg{border:none;border-radius:999px;padding:4px 12px;background:rgba(255,255,255,.1);color:#fff;font:inherit;font-size:12px;cursor:pointer}
+.lb-sub{font-size:12px;font-weight:800;letter-spacing:.5px;margin:4px 0 8px}
+.lb-body{min-height:260px;max-height:46vh;overflow:auto;touch-action:pan-y}
+.lb.off .lb-body,.lb.off .lb-sub{display:none}
+.lb-th,.lb-row{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;padding:6px 8px;font-size:14px}
+.lb-th{font-size:11px;opacity:.55;padding-top:0}
+.lb-row{border-radius:10px}
+.lb-row:nth-child(odd){background:rgba(255,255,255,.04)}
+.lb-row.me{box-shadow:inset 0 0 0 1px #3ee6ff}
+.lb-rk{text-align:center;font-weight:900;opacity:.85}
+.lb-nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-sc{font-weight:800;font-variant-numeric:tabular-nums}
+.lb-msg{font-size:13px;opacity:.6;text-align:center;padding:48px 8px;line-height:1.6}
+.rsub{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;max-width:94vw}
+.rsub input{width:180px;padding:10px 14px;border-radius:999px;border:2px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font:inherit;font-size:15px;outline:none}
+.rsub input:focus{border-color:#3ee6ff}
+.rsub .big{padding:10px 22px;font-size:15px}
+.rsub-msg{width:100%;font-size:13px;opacity:.85;min-height:1.2em}
 </style>
 </head>
 <body>
@@ -75,12 +104,21 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 <button id="pauseBtn" class="hidden">Ⅱ</button>
 
 <div id="titleOv" class="ov">
+ <div class="twrap">
+  <div class="tmain">
   <div class="logo">⚡ 에너지 리듬</div>
   <div class="sub">ENERGY RHYTHM · 클래식 · 민요 · 캐럴 · 오리지널 22곡</div>
   <div id="songs" class="songs"></div>
   <div id="diffs" class="diffs"></div>
   <button id="startBtn" class="big">시작하기</button>
   <div class="help">PC <kbd>D</kbd><kbd>F</kbd><kbd>J</kbd><kbd>K</kbd> · 모바일은 레인 터치 · <kbd>Esc</kbd> 일시정지<br>⚡ 에너지 게이지가 0이 되면 게임 오버 · 노트가 없을 때 헛누르면 게이지가 깎여요</div>
+  </div>
+  <aside id="lb" class="lb hidden">
+    <div class="lb-head"><b>🏆 랭킹 TOP 10</b><button id="lbToggle" class="lb-tg">숨기기</button></div>
+    <div id="lbSub" class="lb-sub"></div>
+    <div id="lbBody" class="lb-body"></div>
+  </aside>
+ </div>
 </div>
 
 <div id="pauseOv" class="ov hidden">
@@ -99,6 +137,11 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
   <div id="rBadge" class="badge"></div>
   <div id="rScore" style="font-size:30px;font-weight:800"></div>
   <div class="stats" id="rStats"></div>
+  <div id="rSubmit" class="rsub hidden">
+    <input id="rName" maxlength="12" placeholder="별명 (최대 12자)" autocomplete="off" enterkeyhint="send">
+    <button id="rSend" class="big">랭킹 등록</button>
+    <div id="rSubMsg" class="rsub-msg"></div>
+  </div>
   <div class="btns">
     <button class="big" data-a="retry">다시 하기</button>
     <button class="big alt" data-a="menu">곡 선택</button>
@@ -115,6 +158,9 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 </div>
 
 <script>
+/* ★ 랭킹(구글 시트) 연결: Apps Script 웹 앱 주소(…/exec)를 따옴표 안에 붙여 넣으세요.
+     비워 두면 랭킹 기능이 아예 숨겨집니다. */
+const LB_URL = '';
 //SONG-START
 /* ---------- 비창 오버드라이브 (원래 곡) ---------- */
 
@@ -938,6 +984,7 @@ let starting = false;
 async function startGame() {
   if (starting) return;
   starting = true;
+  lbAbort(); // 랭킹을 불러오는 중이었다면 바로 취소(게임 중에는 네트워크 작업 없음)
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   initAudio();
   stopSrc();
@@ -1043,6 +1090,7 @@ function finish() {
   $('rBadge').textContent = S_.failed ? `GAME OVER · ${Math.round(Math.min(1, st / cur.end) * 100)}% 진행` : S_.m === 0 && S_.gr === 0 && S_.gd === 0 ? 'ALL PERFECT!' : S_.m === 0 ? 'FULL COMBO!' : (isNew ? '새 최고 기록!' : '');
   $('rScore').textContent = fmt(score);
   $('rStats').innerHTML = `<span>정확도</span><b>${(acc * 100).toFixed(2)}%</b><span>최대 콤보</span><b>${S_.max}</b><span style="color:#ffe76a">PERFECT</span><b>${S_.p}</b><span style="color:#5effa1">GREAT</span><b>${S_.gr}</b><span style="color:#56a8ff">GOOD</span><b>${S_.gd}</b><span style="color:#ff4d6d">MISS</span><b>${S_.m}</b><span>헛누름</span><b>${S_.empty}</b><span>최고 점수</span><b>${fmt(best[key] || 0)}</b>`;
+  lbPrepareSubmit(key, score, acc, S_.failed);
   $('resultOv').classList.remove('hidden');
 }
 function pause() {
@@ -1068,9 +1116,97 @@ function toMenu() {
   renderTitle(); $('titleOv').classList.remove('hidden');
 }
 
+/* ================= LEADERBOARD (구글 시트) =================
+   - 곡/난이도를 고르면 그 랭킹을 불러온다(60초 동안은 다시 받지 않음)
+   - 불러오는 중에 '시작하기'를 누르면 요청을 취소하고, 게임 중에는 아무것도 불러오지 않는다
+   - '숨기기'를 누르면 패널을 접고 아예 불러오지 않는다(브라우저에 기억) */
+let lbOn = store.get('lbOn', true), lbCtl = null, lbTimer = 0, lastResult = null;
+const lbCache = {};
+const lbKey = () => cur.id + '_' + diff;
+function lbMsg(text) { const b = $('lbBody'); b.textContent = ''; const d = document.createElement('div'); d.className = 'lb-msg'; d.textContent = text; b.appendChild(d); }
+function lbRows(rows) {
+  if (!rows.length) { lbMsg('아직 기록이 없어요.\n첫 번째 주인공이 되어 보세요!'); $('lbBody').firstChild.style.whiteSpace = 'pre-line'; return; }
+  const b = $('lbBody'), me = store.get('nick', '');
+  b.textContent = '';
+  const th = document.createElement('div'); th.className = 'lb-th';
+  ['순위', '별명', '점수'].forEach(t => { const s = document.createElement('span'); s.textContent = t; th.appendChild(s); });
+  b.appendChild(th);
+  rows.forEach((r, i) => {
+    const d = document.createElement('div'); d.className = 'lb-row' + (me && r.name === me ? ' me' : '');
+    const rk = document.createElement('span'); rk.className = 'lb-rk'; rk.textContent = i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1;
+    const nm = document.createElement('span'); nm.className = 'lb-nm'; nm.textContent = r.name; // textContent로 넣어 HTML 삽입 방지
+    const sc = document.createElement('span'); sc.className = 'lb-sc'; sc.textContent = fmt(r.score);
+    d.append(rk, nm, sc); b.appendChild(d);
+  });
+}
+function lbAbort() {
+  clearTimeout(lbTimer);
+  if (lbCtl) { const c = lbCtl; lbCtl = null; try { c.abort(); } catch (e) {} }
+}
+function lbRequest(force) {
+  if (!LB_URL) return;
+  lbAbort();
+  $('lb').classList.toggle('off', !lbOn);
+  $('lbToggle').textContent = lbOn ? '숨기기' : '보기';
+  $('lbSub').textContent = `${cur.title} · ${DIFFS[diff].name}`; $('lbSub').style.color = DIFFS[diff].color;
+  if (!lbOn || state !== 'title' || starting) return;
+  const key = lbKey(), c = lbCache[key];
+  if (c && !force && Date.now() - c.at < 60000) { lbRows(c.rows); return; }
+  lbMsg('랭킹 불러오는 중…');
+  lbTimer = setTimeout(() => { // 곡을 빠르게 넘길 때 요청이 몰리지 않도록 잠깐 기다림
+    if (state !== 'title' || starting || !lbOn) return;
+    const ctl = lbCtl = typeof AbortController === 'function' ? new AbortController() : { abort() {}, signal: undefined };
+    const to = setTimeout(() => ctl.abort(), 8000);
+    fetch(LB_URL + '?key=' + encodeURIComponent(key), { signal: ctl.signal })
+      .then(r => r.json())
+      .then(d => {
+        if (lbCtl !== ctl) return; // 취소됐거나 다른 곡으로 바뀜
+        if (!d || !d.ok) throw new Error('bad');
+        lbCache[key] = { at: Date.now(), rows: d.rows || [] };
+        if (key === lbKey()) lbRows(lbCache[key].rows);
+      })
+      .catch(() => { if (lbCtl === ctl) lbMsg('랭킹을 불러오지 못했어요'); })
+      .finally(() => { clearTimeout(to); if (lbCtl === ctl) lbCtl = null; });
+  }, 250);
+}
+$('lbToggle').onclick = () => { lbOn = !lbOn; store.set('lbOn', lbOn); lbRequest(); };
+if (LB_URL) $('lb').classList.remove('hidden');
+
+// 결과 화면: 게임이 끝나면(클리어·게임 오버 모두) 별명 입력 + 등록 버튼 표시. 버튼을 눌러야만 전송된다
+// (같은 별명은 최고 점수 하나만 남으므로, 게임 오버 기록은 더 높은 기록이 있으면 무시됨)
+function lbPrepareSubmit(key, score, acc, failed) {
+  const box = $('rSubmit');
+  lastResult = !LB_URL || score <= 0 ? null : { key, score, acc: +(acc * 100).toFixed(2), combo: S_.max, sent: false };
+  box.classList.toggle('hidden', !lastResult);
+  if (!lastResult) return;
+  $('rName').value = store.get('nick', '');
+  $('rSend').disabled = false; $('rSend').textContent = '랭킹 등록';
+  $('rSubMsg').textContent = failed ? '게임 오버 기록도 등록할 수 있어요' : '';
+}
+function lbSubmit() {
+  const r = lastResult; if (!r || r.sent) return;
+  const name = $('rName').value.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 12);
+  if (!name) { $('rSubMsg').textContent = '별명을 입력해 주세요'; $('rName').focus(); return; }
+  store.set('nick', name);
+  r.sent = true; $('rSend').disabled = true; $('rSubMsg').textContent = '등록 중…';
+  fetch(LB_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ key: r.key, name, score: r.score, acc: r.acc, combo: r.combo }) })
+    .then(res => res.json())
+    .then(d => {
+      if (!d || !d.ok) throw new Error('bad');
+      delete lbCache[r.key];
+      $('rSend').textContent = '등록 완료';
+      $('rSubMsg').textContent = d.improved ? `등록 완료! 현재 ${d.rank}위 (${d.total}명 중)` : `기존 기록 ${fmt(d.best)}점이 더 높아서 그대로 유지돼요 (현재 ${d.rank}위)`;
+    })
+    .catch(() => { r.sent = false; $('rSend').disabled = false; $('rSubMsg').textContent = '등록하지 못했어요. 다시 눌러 주세요'; });
+}
+$('rSend').onclick = lbSubmit;
+$('rName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lbSubmit(); } });
+
 /* ================= INPUT ================= */
 const KEYS = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3 };
 addEventListener('keydown', e => {
+  const tg = e.target && e.target.tagName;
+  if (tg === 'INPUT' || tg === 'TEXTAREA') return; // 별명 입력 중에는 게임 단축키 무시
   if (e.code === 'Escape') { if (state === 'play') pause(); else if (state === 'pause') resume(); return; }
   if (state === 'title') {
     if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); startGame(); }
@@ -1139,6 +1275,7 @@ function renderTitle() {
   $('diffs').innerHTML = DIFFS.map((d, i) => `<button class="diff${i === diff ? ' sel' : ''}" data-d="${i}" style="${i === diff ? `border-color:${d.color};box-shadow:0 0 20px ${d.color}66;` : ''}"><b style="color:${d.color}">${d.name}</b><small>Lv.${cur.lv[i]} · ${cur.charts[i].length}노트</small><small>최고 ${fmt(bestOf(cur, i))}</small></button>`).join('');
   document.querySelectorAll('.diff').forEach(b => b.onclick = () => { if (starting) return; diff = +b.dataset.d; store.set('diff', diff); renderTitle(); });
   const sel = document.querySelector('.song.sel'); if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
+  lbRequest();
 }
 renderTitle();
 prerender();
