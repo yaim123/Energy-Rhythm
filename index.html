@@ -93,7 +93,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 .lb-sc{font-weight:800;font-variant-numeric:tabular-nums}
 .lb-msg{font-size:13px;opacity:.6;text-align:center;padding:48px 8px;line-height:1.6}
 .rsub{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;max-width:94vw}
-.rsub input{width:180px;padding:10px 14px;border-radius:999px;border:2px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font:inherit;font-size:15px;outline:none}
+.rsub input{width:180px;padding:10px 14px;border-radius:999px;border:2px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font:inherit;font-size:15px;outline:none;-webkit-user-select:text;user-select:text}
 .rsub input:focus{border-color:#3ee6ff}
 .rsub .big{padding:10px 22px;font-size:15px}
 .rsub-msg{width:100%;font-size:13px;opacity:.85;min-height:1.2em}
@@ -160,7 +160,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 <script>
 /* ★ 랭킹(구글 시트) 연결: Apps Script 웹 앱 주소(…/exec)를 따옴표 안에 붙여 넣으세요.
      비워 두면 랭킹 기능이 아예 숨겨집니다. */
-const LB_URL = 'https://script.google.com/macros/s/AKfycbwg5wyhoSAO-q0iXqihNuA-zoPZIDmaXek1utwL-eA8C_fz6F5ZhXnAG7kpTxo0qJu3/exec';
+const LB_URL = 'https://script.google.com/macros/s/AKfycbyNLeArGUWojCKmGoWnGAOsUdS3bKLHYJ8egthf_8WREhZyVvBl1o6Ixt5WdQL7vQuZ/exec';
 //SONG-START
 /* ---------- 비창 오버드라이브 (원래 곡) ---------- */
 
@@ -818,7 +818,11 @@ let SY = null, SO = null, SN = null; // 합성 대상(오프라인 컨텍스트,
 const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
 const RENDER_SR = 44100;
 function initAudio() {
-  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // 전화·이어폰 분리 등으로 오디오가 끊기면 노트만 멈춘 채 방치되지 않도록 일시정지 화면을 띄운다
+    ctx.onstatechange = () => setTimeout(() => { if (state === 'play' && ctx.state !== 'running') pause(); }, 300);
+  }
   if (ctx.state !== 'running') { try { ctx.resume(); } catch (e) {} }
   // iOS 오디오 잠금 해제용 무음 1샘플 (사용자 터치 안에서 실행)
   try { const b = ctx.createBuffer(1, 1, 22050), s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0); } catch (e) {}
@@ -1019,6 +1023,7 @@ async function startGame() {
   state = 'play';
   ['titleOv', 'pauseOv', 'resultOv'].forEach(id => $(id).classList.add('hidden'));
   $('pauseBtn').classList.remove('hidden');
+  if (document.hidden) pause(); // 음악을 만드는 동안 탭이 가려졌다면 바로 일시정지
 }
 function setGauge(dv) {
   S_.gauge = Math.max(0, Math.min(100, S_.gauge + dv));
@@ -1194,12 +1199,15 @@ function lbSubmit() {
     .then(d => {
       if (!d || !d.ok) throw new Error('bad');
       delete lbCache[r.key];
+      if (d.name) { store.set('nick', d.name); $('rName').value = d.name; } // 서버에 실제로 저장된 별명으로 맞춤
       $('rSend').textContent = '등록 완료';
       $('rSubMsg').textContent = d.improved ? `등록 완료! 현재 ${d.rank}위 (${d.total}명 중)` : `기존 기록 ${fmt(d.best)}점이 더 높아서 그대로 유지돼요 (현재 ${d.rank}위)`;
     })
     .catch(() => { r.sent = false; $('rSend').disabled = false; $('rSubMsg').textContent = '등록하지 못했어요. 다시 눌러 주세요'; });
 }
 $('rSend').onclick = lbSubmit;
+// 별명은 입력하는 즉시 이 브라우저에 기억 → 등록을 누르지 않았어도 다음 판 결과 화면에 미리 채워진다
+$('rName').addEventListener('input', () => store.set('nick', $('rName').value.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 12)));
 $('rName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); lbSubmit(); } });
 
 /* ================= INPUT ================= */
@@ -1258,6 +1266,7 @@ if (window.PointerEvent) {
 addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 addEventListener('pagehide', pause);
+addEventListener('blur', pause); // 창 포커스를 잃으면(Alt+Tab 등) 키를 떼는 이벤트를 놓치므로 일시정지
 $('pauseBtn').onclick = () => { pause(); $('pauseBtn').blur(); };
 $('startBtn').onclick = () => { if (state === 'title') startGame(); };
 document.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
@@ -1265,7 +1274,6 @@ document.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
   if (a === 'resume') resume();
   if (a === 'retry' && (state === 'pause' || state === 'result')) startGame();
   if (a === 'menu') toMenu();
-  else renderTitle();
 });
 function selectSong(i) { if (starting) return; songIdx = i; cur = prepareSong(SONGS[i]); store.set('song', cur.id); renderTitle(); prerender(); }
 function renderTitle() {
