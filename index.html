@@ -38,6 +38,36 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 .stats{display:grid;grid-template-columns:auto auto;gap:4px 22px;font-size:15px;text-align:left}
 .stats span:nth-child(odd){opacity:.7}
 .badge{font-weight:900;letter-spacing:2px;color:#ffd23e;min-height:1.2em}
+/* 음악 준비 화면: 화면 전체를 덮어 다른 곳을 누르거나 스크롤할 수 없게 함 */
+.lm{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(5,3,15,.93);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);touch-action:none;overscroll-behavior:contain;cursor:wait;animation:lmIn .25s .12s both}
+@keyframes lmIn{from{opacity:0}to{opacity:1}}
+.lm-box{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;text-align:center}
+.lm-bubble{position:relative;max-width:min(320px,86vw);padding:14px 20px;border-radius:22px;background:#fff;color:#2a1650;font-size:15px;line-height:1.5;box-shadow:0 8px 30px rgba(62,230,255,.25);animation:lmPop .4s .15s both}
+.lm-bubble>b{display:block;font-size:18px;font-weight:900;color:#ff3d7f;margin-bottom:2px}
+.lm-bubble span b{color:#6b3cff}
+.lm-bubble:after{content:"";position:absolute;left:50%;bottom:-12px;margin-left:-12px;border:12px solid transparent;border-bottom:0;border-top-color:#fff}
+@keyframes lmPop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+.dots i{font-style:normal;animation:lmDot 1.2s infinite;opacity:.2}
+.dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+@keyframes lmDot{0%,60%,100%{opacity:.2}30%{opacity:1}}
+.lm-char{position:relative;width:110px;height:110px;margin-top:44px;animation:lmBounce .9s ease-in-out infinite}
+@keyframes lmBounce{0%,100%{transform:translateY(0) scale(1,1)}45%{transform:translateY(-16px) scale(.96,1.04)}90%{transform:translateY(0) scale(1.06,.94)}}
+.lm-body{position:absolute;inset:0;border-radius:50% 50% 46% 46%;background:radial-gradient(circle at 35% 30%,#fff7b8,#ffd23e 45%,#ffa21a);box-shadow:0 0 30px rgba(255,210,62,.55),inset 0 -8px 14px rgba(255,120,0,.35)}
+.lm-ant{position:absolute;left:50%;top:-30px;transform:translateX(-50%) rotate(-8deg);font-size:30px;filter:drop-shadow(0 0 8px #3ee6ff);animation:lmWig 1.8s ease-in-out infinite}
+@keyframes lmWig{0%,100%{transform:translateX(-50%) rotate(-12deg)}50%{transform:translateX(-50%) rotate(12deg)}}
+.lm-eye{position:absolute;top:40px;width:13px;height:17px;border-radius:50%;background:#2a1650;animation:lmBlink 3.2s infinite}
+.lm-eye:after{content:"";position:absolute;top:3px;left:3px;width:5px;height:5px;border-radius:50%;background:#fff}
+.lm-eye.l{left:32px}.lm-eye.r{right:32px}
+@keyframes lmBlink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+.lm-cheek{position:absolute;top:62px;width:16px;height:9px;border-radius:50%;background:rgba(255,90,140,.55)}
+.lm-cheek.l{left:18px}.lm-cheek.r{right:18px}
+.lm-mouth{position:absolute;top:64px;left:50%;width:18px;height:10px;margin-left:-9px;border-radius:0 0 12px 12px;background:#2a1650}
+.lm-shadow{width:80px;height:12px;border-radius:50%;background:rgba(0,0,0,.45);margin-top:4px;animation:lmShadow .9s ease-in-out infinite}
+@keyframes lmShadow{0%,100%{transform:scaleX(1);opacity:.6}45%{transform:scaleX(.7);opacity:.3}}
+.lm-bar{width:min(240px,70vw);height:8px;border-radius:99px;background:rgba(255,255,255,.12);overflow:hidden;margin-top:12px}
+#lmBar{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#3ee6ff,#ffd23e);transition:width .25s}
+.lm.err .lm-bar{display:none}
+.lm.err .lm-body{filter:hue-rotate(-40deg) saturate(.8)}
 </style>
 </head>
 <body>
@@ -72,6 +102,15 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
   <div class="btns">
     <button class="big" data-a="retry">다시 하기</button>
     <button class="big alt" data-a="menu">곡 선택</button>
+  </div>
+</div>
+
+<div id="loadMsg" class="lm hidden">
+  <div class="lm-box">
+    <div class="lm-bubble"><b id="lmTitle">잠깐만 기다려 줘!</b><span id="lmText">음악을 만드는 중이야</span></div>
+    <div class="lm-char"><span class="lm-ant">⚡</span><div class="lm-body"></div><i class="lm-eye l"></i><i class="lm-eye r"></i><i class="lm-cheek l"></i><i class="lm-cheek r"></i><i class="lm-mouth"></i></div>
+    <div class="lm-shadow"></div>
+    <div class="lm-bar"><div id="lmBar"></div></div>
   </div>
 </div>
 
@@ -689,7 +728,20 @@ let cur = prepareSong(SONGS[songIdx]);
 const bestOf = (s, d) => best[s.id + '_' + d] || 0;
 
 const $ = id => document.getElementById(id);
-document.body.insertAdjacentHTML('beforeend', '<div id="loadMsg" class="hidden" style="position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 18px;border-radius:999px;background:rgba(20,14,48,.94);border:1px solid rgba(62,230,255,.45);font-size:14px;font-weight:700;z-index:20;white-space:nowrap">🎵 음악 준비 중…</div>');
+// 음악 준비 화면 (준비하는 동안 화면 전체를 막아 다른 곡 선택·스크롤 불가)
+let loadingId = null;
+const renderProg = {};
+function setProg(id, p) { renderProg[id] = p; if (loadingId === id) $('lmBar').style.width = Math.round(Math.min(1, p) * 100) + '%'; }
+function showLoading(s, err) {
+  loadingId = s ? s.id : null;
+  $('lmTitle').textContent = err ? '앗, 문제가 생겼어!' : '잠깐만 기다려 줘!';
+  $('lmText').innerHTML = err ? '음악을 만들지 못했어.<br>다시 시도해 줄래?' : `<b>${s.title}</b><br>음악을 만드는 중이야<span class="dots"><i>.</i><i>.</i><i>.</i></span>`;
+  $('lmBar').style.width = Math.round((s && renderProg[s.id] || 0) * 100) + '%';
+  $('loadMsg').classList.toggle('err', !!err);
+  $('loadMsg').classList.remove('hidden');
+}
+function hideLoading() { loadingId = null; $('loadMsg').classList.add('hidden'); }
+['pointerdown', 'touchstart', 'touchmove', 'wheel', 'click'].forEach(ev => $('loadMsg').addEventListener(ev, e => { e.stopPropagation(); if (e.cancelable) e.preventDefault(); }, { passive: false }));
 const cv = $('cv'), g = cv.getContext('2d', { alpha: false });
 let W, H, DPR, colX, colW, laneW, judgeY;
 let laneGrad = [], judgeGrad = null, dangerGrad = null;
@@ -812,8 +864,9 @@ async function renderSongAudio(s) {
   prepareSong(s);
   const sr = RENDER_SR, SEG = 6, EV = s.ev;
   const out = makeBuffer(Math.ceil((s.end + 2.5) * sr), sr), od = out.getChannelData(0);
-  const jobs = [];
-  let i = 0;
+  const jobs = [], total = Math.max(1, Math.ceil(s.end / SEG));
+  let i = 0, doneN = 0;
+  setProg(s.id, 0);
   for (let s0 = 0; i < EV.length; s0 += SEG) {
     let j = i, tailEnd = s0 + SEG;
     while (j < EV.length && EV[j].ts < s0 + SEG) { tailEnd = Math.max(tailEnd, EV[j].ts + (EV[j].ds || 0)); j++; }
@@ -829,12 +882,14 @@ async function renderSongAudio(s) {
     jobs.push(runOffline(oc).then(b => {
       const d = b.getChannelData(0), n = Math.min(d.length, od.length - off);
       for (let k = 0; k < n; k++) od[off + k] += d[k];
+      setProg(s.id, ++doneN / total);
     }));
     i = j;
     if (jobs.length % 3 === 0) await Promise.all(jobs.slice(-3)); // 동시에 최대 3구간
     await tick();
   }
   await Promise.all(jobs);
+  setProg(s.id, 1);
   return out;
 }
 // 렌더링 결과 캐시(최근 2곡) + 한 번에 한 곡씩만 렌더링
@@ -889,18 +944,16 @@ async function startGame() {
   if (master) { try { master.disconnect(); } catch (e) {} master = null; }
   state = 'loading';
   $('pauseBtn').classList.add('hidden');
-  const s = cur, lm = $('loadMsg');
-  lm.textContent = '🎵 음악 준비 중…';
-  const slow = setTimeout(() => lm.classList.remove('hidden'), 120);
+  const s = cur;
+  showLoading(s); // 이미 준비된 곡이면 바로 닫혀서 화면에 보이지 않음(0.12초 뒤부터 서서히 나타남)
   let buf;
   try { buf = await songAudio(s); }
   catch (e) {
-    clearTimeout(slow); starting = false; toMenu();
-    lm.textContent = '⚠ 음악을 준비하지 못했어요. 다시 시도해 주세요'; lm.classList.remove('hidden');
-    setTimeout(() => lm.classList.add('hidden'), 2500);
+    starting = false; toMenu();
+    showLoading(null, true); setTimeout(hideLoading, 2200);
     return;
   }
-  clearTimeout(slow); lm.classList.add('hidden');
+  hideLoading();
   starting = false;
   if (ctx.state !== 'running') { try { ctx.resume(); } catch (e) {} }
   newMaster();
@@ -1078,13 +1131,13 @@ document.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
   if (a === 'menu') toMenu();
   else renderTitle();
 });
-function selectSong(i) { songIdx = i; cur = prepareSong(SONGS[i]); store.set('song', cur.id); renderTitle(); prerender(); }
+function selectSong(i) { if (starting) return; songIdx = i; cur = prepareSong(SONGS[i]); store.set('song', cur.id); renderTitle(); prerender(); }
 function renderTitle() {
   prepareSong(cur);
   $('songs').innerHTML = SONGS.map((s, i) => `<button class="song${i === songIdx ? ' sel' : ''}" data-s="${i}"><div><b>${s.title}</b><small>${s.comp} · ${s.bpm1 ? s.bpm0 + '→' + s.bpm1 : s.bpm0} BPM</small></div><div class="lvls">${s.lv.map((v, d) => `<i style="color:${DIFFS[d].color}">${v}</i>`).join('')}</div></button>`).join('');
   document.querySelectorAll('.song').forEach(b => b.onclick = () => selectSong(+b.dataset.s));
   $('diffs').innerHTML = DIFFS.map((d, i) => `<button class="diff${i === diff ? ' sel' : ''}" data-d="${i}" style="${i === diff ? `border-color:${d.color};box-shadow:0 0 20px ${d.color}66;` : ''}"><b style="color:${d.color}">${d.name}</b><small>Lv.${cur.lv[i]} · ${cur.charts[i].length}노트</small><small>최고 ${fmt(bestOf(cur, i))}</small></button>`).join('');
-  document.querySelectorAll('.diff').forEach(b => b.onclick = () => { diff = +b.dataset.d; store.set('diff', diff); renderTitle(); });
+  document.querySelectorAll('.diff').forEach(b => b.onclick = () => { if (starting) return; diff = +b.dataset.d; store.set('diff', diff); renderTitle(); });
   const sel = document.querySelector('.song.sel'); if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
 }
 renderTitle();
