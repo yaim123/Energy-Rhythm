@@ -160,7 +160,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 <script>
 /* ★ 랭킹(구글 시트) 연결: Apps Script 웹 앱 주소(…/exec)를 따옴표 안에 붙여 넣으세요.
      비워 두면 랭킹 기능이 아예 숨겨집니다. */
-const LB_URL = 'https://script.google.com/macros/s/AKfycbyNLeArGUWojCKmGoWnGAOsUdS3bKLHYJ8egthf_8WREhZyVvBl1o6Ixt5WdQL7vQuZ/exec';
+const LB_URL = 'https://script.google.com/macros/s/AKfycbweJaoXmJsFiZYC4jyKGf4Mw2VdExrAkLtT_oz5LPn7HydHqj_0LSd3Rl2QRKBr1q-a/exec';
 //SONG-START
 /* ---------- 비창 오버드라이브 (원래 곡) ---------- */
 
@@ -1162,7 +1162,7 @@ function lbRequest(force) {
     if (state !== 'title' || starting || !lbOn) return;
     const ctl = lbCtl = typeof AbortController === 'function' ? new AbortController() : { abort() {}, signal: undefined };
     const to = setTimeout(() => ctl.abort(), 8000);
-    fetch(LB_URL + '?key=' + encodeURIComponent(key), { signal: ctl.signal })
+    fetch(LB_URL + '?key=' + encodeURIComponent(key) + '&title=' + encodeURIComponent(cur.title), { signal: ctl.signal })
       .then(r => r.json())
       .then(d => {
         if (lbCtl !== ctl) return; // 취소됐거나 다른 곡으로 바뀜
@@ -1181,7 +1181,7 @@ if (LB_URL) $('lb').classList.remove('hidden');
 // (같은 별명은 최고 점수 하나만 남으므로, 게임 오버 기록은 더 높은 기록이 있으면 무시됨)
 function lbPrepareSubmit(key, score, acc, failed) {
   const box = $('rSubmit');
-  lastResult = !LB_URL || score <= 0 ? null : { key, score, acc: +(acc * 100).toFixed(2), combo: S_.max, sent: false };
+  lastResult = !LB_URL || score <= 0 ? null : { key, title: cur.title, score, acc: +(acc * 100).toFixed(2), combo: S_.max, sent: false };
   box.classList.toggle('hidden', !lastResult);
   if (!lastResult) return;
   $('rName').value = store.get('nick', '');
@@ -1194,7 +1194,7 @@ function lbSubmit() {
   if (!name) { $('rSubMsg').textContent = '별명을 입력해 주세요'; $('rName').focus(); return; }
   store.set('nick', name);
   r.sent = true; $('rSend').disabled = true; $('rSubMsg').textContent = '등록 중…';
-  fetch(LB_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ key: r.key, name, score: r.score, acc: r.acc, combo: r.combo }) })
+  fetch(LB_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ key: r.key, title: r.title, name, score: r.score, acc: r.acc, combo: r.combo }) })
     .then(res => res.json())
     .then(d => {
       if (!d || !d.ok) throw new Error('bad');
