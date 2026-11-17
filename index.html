@@ -107,7 +107,7 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
  <div class="twrap">
   <div class="tmain">
   <div class="logo">⚡ 에너지 리듬</div>
-  <div class="sub">ENERGY RHYTHM · 클래식 · 민요 · 캐럴 · 오리지널 22곡</div>
+  <div class="sub">ENERGY RHYTHM · 클래식 · 민요 · 캐럴 · 오리지널 23곡</div>
   <div id="songs" class="songs"></div>
   <div id="diffs" class="diffs"></div>
   <button id="startBtn" class="big">시작하기</button>
@@ -360,6 +360,7 @@ function accomp(ev, ch, type, bs, bb, pcs, lvlMap) {
     }
   } else if (type === 'oom') { for (let k = 0; k < Math.floor(bb); k++) ev.push({ t: bs + k + .5, i: 'stab', ch: v, v: .6 }); }
   else if (type === 'pad') ev.push({ t: bs, i: 'pad', ch: v, d: bb });
+  else if (type === 'trip') { const r = 55 + ((pcs[0] - 7 + 12) % 12); for (let k = 0; k < Math.round(bb * 3); k++) ev.push({ t: bs + k / 3, i: 'stab', ch: [r, r + 12], v: k % 3 ? .45 : .7 }); }
   else if (type === 'carol') { for (let k = 0; k < bb / 3; k++) [[70, 0], [69, 1], [70, 1.5], [67, 2]].forEach(([m, o]) => ev.push({ t: bs + k * 3 + o, i: 'arp', m, v: .05 })); }
   else if (type === 'six') { for (let g = 0; g < bb / 1.5; g++) { ev.push({ t: bs + g * 1.5 + .5, i: 'stab', ch: v, v: .5 }, { t: bs + g * 1.5 + 1, i: 'stab', ch: v, v: .5 }); } }
 }
@@ -407,7 +408,7 @@ function makeSong(spec) {
           if (prev !== null) lane = mm > prev ? (lane + 1) % 4 : mm < prev ? (lane + 3) % 4 : (lane + 2) % 4;
           prev = mm;
           const rel = t - t0, inBar = rel - Math.floor(rel / bb + E) * bb, ph = inBar - Math.floor(inBar + E);
-          const lvl = Math.abs(ph) < E ? 0 : Math.abs(ph - .5) < E ? 1 : 2;
+          const lvl = Math.abs(ph) < E ? 0 : Math.abs(ph - (sec.trip ? 2 / 3 : .5)) < E ? 1 : 2;
           const len = d >= 1.5 ? d - .4 : 0;
           ch.push({ t, lane, len, lvl });
           if (sec.mirror) {
@@ -531,6 +532,18 @@ const BR_I = [...brk('Em', 52), ...brk('C', 48), ...brk('D', 50), ...brk('B', 47
 const BR_R = S("E5 E4 G4 E5 E4 B4 E5 E4 F#5 E4 G5 E4 F#5 E4 D#5 E4 G5 C5 E5 G5 C6 G5 E5 C5 B4 C5 E5 G5 B5 G5 E5 B4 F#5 D5 A4 D5 F#5 A5 D6 A5 F#5 D5 A4 F#4 A4 D5 F#5 A5 D#6:4 B5:4 F#5:4 D#5:4", .25);
 const BR_M = S("B4:2 E5:2 F#5 G5 F#5 E5 G5:3 A5 B5:2 G5:2 A5:2 F#5:2 D5 E5 F#5 A5 B5:6 D#5 F#5 B5:2 A5 G5 F#5:2 E5:2 C6:3 B5 A5:2 E5:2 D#5 E5 F#5 G5 A5 G5 F#5 D#5 E5:6 R:2", .5);
 const BR_MC = ['Em','C','D','B','Em','Am','B7','Em'];
+// 마왕 (슈베르트, G단조) — 셋잇단 말발굽 연타·왼손 상행 동기를 살린 자유 편곡
+const T3 = 1 / 3;
+const EK_I = S(rep('G4', 12) + " G4 A4 Bb4 C5 D5 Eb5:3 C5:2 A4:2 " + rep('G4', 12) + " G4 A4 Bb4 C5 D5 Eb5:3 F#4:2 G4:2", T3);
+const EK_IC = ['Gm','Cm','Gm','Gm'];
+const EK_A = S("D5:2 D5 Bb4 G4:2 A4 Bb4 C5:2 Bb4 A4 G4:4 D5:2 D5 Eb5 F5:2 Eb5 D5 C5:2 A4 F#4 G4:4 Bb4:2 C5 D5 Eb5:2 D5 C5 D5:2 C5 Bb4 A4:4 G4:2 Bb4 D5 G5:3 F#5 G5:6 R:2", .5);
+const EK_AC = ['Gm','Cm','Bb','D','Eb','D','Gm','Gm'];
+const EK_E = S("F4 Bb4 D5 Bb4 F5:2 D5:2 Eb5 D5 C5 Bb4 C5:4 F4 A4 C5 A4 Eb5:2 C5:2 D5 C5 Bb4 A4 Bb4:4", .5);
+const EK_EC = ['Bb','Eb','F','Bb'];
+const EK_C = S("D5:2 Eb5:2 D5:3 R Eb5:2 E5:2 Eb5:3 R E5:2 F5:2 E5:3 R F5:2 F#5:2 G5:4", .5);
+const EK_CC = ['D7','Cm','Bb','D7'];
+const EK_F = S("G4 A4 Bb4 C5 D5 Eb5 D5 C5 Bb4 A4 G4 F#4 C5 D5 Eb5 F5 G5 Ab5 G5 F5 Eb5 D5 C5 B4 D5 Eb5 F#5 G5 A5 Bb5 A5 G5 F#5 Eb5 D5 C5 Bb4 A4 G4 F#4 G4:8", T3);
+const EK_FC = ['Gm','Cm','D','Gm'];
 
 const F16 = [9, 2, 1, 2], G16 = [9, 2, 9, 2], H16 = [9, 9, 1, 2];
 const SONGS = [
@@ -547,7 +560,7 @@ const SONGS = [
       { mel: WW, chords: WW_C, oct: 12, lead: 'lead', acc: 'arp16', arpLvl: H16, bass: 'oom', drums: 'four', crash: 1 },
       { mel: WW, chords: WW_C, oct: 12, lead: 'lead', dbl: 1, mirror: 'beat', acc: 'arp16', arpLvl: F16, bass: 'eighth', drums: 'full', crash: 1 }
     ] } },
-  { id: 'carolbells', title: '캐럴 오브 더 벨스', comp: '🎄 레온토비치 · Carol of the Bells', bpm0: 176, lv: [3, 9, 15],
+  { id: 'carolbells', title: '캐럴 오브 더 벨스', comp: '🎄 레온토비치 · Carol of the Bells', bpm0: 176, lv: [3, 9, 15], spread: [0, 1],
     spec: { name: 'carolbells', barBeats: 3, lead: 'bell', end: { chord: 'Gm', beats: 3 }, sections: [
       { mel: CB_O, chords: CB_OC, bass: 'whole', crash: 1 },
       { mel: CB_U, chords: CB_UC, lead: 'str', acc: 'carol', bass: 'whole', drums: 'four', crash: 1 },
@@ -646,7 +659,7 @@ const SONGS = [
       { mel: IW_A, chords: IW_AC, oct: 12, dbl: 1, mirror: 'beat', acc: 'six', bass: 'six', drums: 'sixfull', crash: 1 },
       { mel: IW_B, chords: IW_BC, dbl: 1, mirror: 'beat', acc: 'arp16', arpLvl: G16, bass: 'six', drums: 'sixfull' }
     ] } },
-  { id: 'toccata', title: '토카타 쇼크', comp: '바흐 · 토카타와 푸가 d단조', bpm0: 132, lv: [4, 9, 14],
+  { id: 'toccata', title: '토카타 쇼크', comp: '바흐 · 토카타와 푸가 d단조', bpm0: 132, lv: [4, 9, 14], spread: [0, 1],
     spec: { name: 'toccata', lead: 'organ', end: { chord: 'Dm', beats: 4 }, sections: [
       { mel: TC_I, chords: TC_IC, bass: 'whole', crash: 1 },
       { mel: TC_B, chords: TC_BC, bass: 'whole', drums: 'kick' },
@@ -691,7 +704,7 @@ const SONGS = [
       { mel: MK_P, chords: MK_C, oct: 12, dbl: 1, mirror: 'beat', acc: 'arp16', arpLvl: G16, bass: 'eighth', drums: 'full', crash: 1 },
       { mel: MK_P2, chords: MK_C2, oct: 12, dbl: 1, mirror: 'beat', acc: 'arp16', arpLvl: G16, bass: 'eighth', drums: 'roll' }
     ] } },
-  { id: 'summer', title: '여름 폭풍', comp: '비발디 · 사계 중 「여름」 3악장', bpm0: 144, lv: [5, 10, 15],
+  { id: 'summer', title: '여름 폭풍', comp: '비발디 · 사계 중 「여름」 3악장', bpm0: 144, lv: [5, 10, 15], spread: [0, 1],
     spec: { name: 'summer', lead: 'str', end: { chord: 'Gm', beats: 4 }, sections: [
       { mel: S(rep('G4', 32), .25), chords: ['Gm','Gm'], bass: 'whole', drums: 'kick', crash: 1 },
       { mel: SU_A, chords: SU_AC, bass: 'eighth', drums: 'four', crash: 1 },
@@ -701,8 +714,19 @@ const SONGS = [
       { mel: SU_B, chords: SU_BC, mirror: 'bar', bass: 'eighth', drums: 'full' },
       { mel: SU_C, chords: SU_CC, dbl: 1, mirror: 'beat', acc: 'arp16', arpLvl: G16, bass: 'eighth', drums: 'roll' }
     ] } },
+  { id: 'erlking', title: '마왕의 질주', comp: '슈베르트 · 마왕 (Erlkönig)', bpm0: 152, lv: [3, 6, 10],
+    spec: { name: 'erlking', lead: 'str', end: { chord: 'Gm', beats: 4 }, sections: [
+      { mel: EK_I, chords: EK_IC, trip: 1, acc: 'trip', bass: 'whole', drums: 'kick', crash: 1 },
+      { mel: EK_A, chords: EK_AC, lead: 'lead', acc: 'trip', bass: 'whole', drums: 'four', crash: 1 },
+      { mel: EK_E, chords: EK_EC, lead: 'bell', acc: 'oom', bass: 'oom', drums: 'soft' },
+      { mel: EK_C, chords: EK_CC, dbl: 1, mirror: 'bar', acc: 'trip', bass: 'eighth', drums: 'full', crash: 1 },
+      { mel: EK_A, chords: EK_AC, lead: 'lead', dbl: 1, mirror: 'beat', acc: 'trip', bass: 'eighth', drums: 'full', crash: 1 },
+      { mel: EK_C, chords: EK_CC, oct: 12, dbl: 1, mirror: 'beat', acc: 'trip', bass: 'eighth', drums: 'full' },
+      { mel: EK_F, chords: EK_FC, trip: 1, mirror: 'beat', acc: 'trip', bass: 'eighth', drums: 'roll', crash: 1 },
+      { mel: EK_I, chords: EK_IC, trip: 1, dbl: 1, acc: 'trip', bass: 'eighth', drums: 'full', crash: 1 }
+    ] } },
   { id: 'pathetique', title: '비창 오버드라이브', comp: '베토벤 · 피아노 소나타 8번 「비창」 3악장', bpm0: 176, lv: [5, 10, 15], build: buildPathetique },
-  { id: 'bumblebee', title: '왕벌 러시', comp: '림스키코르사코프 · 왕벌의 비행', bpm0: 164, lv: [6, 11, 16],
+  { id: 'bumblebee', title: '왕벌 러시', comp: '림스키코르사코프 · 왕벌의 비행', bpm0: 164, lv: [6, 11, 16], spread: [0],
     spec: { name: 'bumblebee', lead: 'str', end: { chord: 'Am', beats: 4 }, sections: [
       { mel: BB_D, chords: ['E','E'], bass: 'whole', drums: 'kick', crash: 1 },
       { mel: BB_T, chords: BB_C, bass: 'eighth', drums: 'four', crash: 1 },
@@ -734,6 +758,26 @@ function chartFor(raw, level, b2s) {
   }
   return out;
 }
+// 지정한 난이도에서 혼자 나오는 노트가 바로 앞 노트와 같은 레인이면 옆 레인으로 옮겨 지그재그로 흐르게 한다
+// (반음 단위로 움직이는 선율에서 정박 음만 뽑으면 같은 레인만 계속 나오는 문제 해결)
+function spreadLanes(chart) {
+  const a = chart.slice().sort((x, y) => x.time - y.time || x.lane - y.lane);
+  const busy = [-9, -9, -9, -9]; // 레인별로 롱노트가 끝나는 시각
+  let last = -1, lt = -9, dir = 1;
+  for (let i = 0; i < a.length; i++) {
+    const n = a[i];
+    const multi = (a[i - 1] && Math.abs(a[i - 1].time - n.time) < 1e-6) || (a[i + 1] && Math.abs(a[i + 1].time - n.time) < 1e-6);
+    if (!multi && n.lane === last && n.time - lt < .6) {
+      let l = last + dir;
+      if (l < 0 || l > 3) { dir = -dir; l = last + dir; }
+      if (busy[l] > n.time - .05) { const alt = last - dir; if (alt >= 0 && alt <= 3 && busy[alt] <= n.time - .05) l = alt; else l = n.lane; }
+      n.lane = l;
+    }
+    if (n.len > 0) busy[n.lane] = n.end;
+    last = multi ? -1 : n.lane; lt = n.time;
+  }
+  return a;
+}
 function prepareSong(s) {
   if (s.charts) return s;
   const data = s.build ? s.build() : makeSong(s.spec);
@@ -743,6 +787,7 @@ function prepareSong(s) {
   s.end = tf.b2s(data.beats); s.barBeats = (s.spec && s.spec.barBeats) || 4;
   // 난이도별 채보를 미리 전부 확정(초 단위 시간·레인·롱노트 길이)해 두고, 플레이 중에는 읽기만 한다
   s.charts = [0, 1, 2].map(l => chartFor(data.ch, l, tf.b2s));
+  (s.spread || []).forEach(l => { s.charts[l] = spreadLanes(s.charts[l]); }); // 지정한 난이도만 레인 분산
   return s;
 }
 SONGS.sort((a, b) => a.lv[2] - b.lv[2] || a.lv[0] - b.lv[0]);
