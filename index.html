@@ -8,6 +8,37 @@
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:#05030f;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#fff}
 canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+/* 매 프레임 다시 그릴 필요 없는 것들은 따로 층을 나눠 브라우저(GPU)가 합성만 하게 한다 */
+#bgBase,#bgGlow,#danger{position:fixed;inset:0;pointer-events:none}
+#bgBase{background:radial-gradient(circle max(65vw,65vh) at 50% 38%,rgba(120,60,255,.16) 0%,rgba(40,180,255,.05) 45%,rgba(0,0,0,0) 100%)}
+#bgGlow{background:radial-gradient(circle max(65vw,65vh) at 50% 38%,rgba(120,60,255,.46) 0%,rgba(40,180,255,.14) 45%,rgba(0,0,0,0) 100%);opacity:.2;will-change:opacity}
+canvas.stars{inset:auto;top:0;left:0;height:200%;pointer-events:none;will-change:transform}
+#st1{animation:tw 3.1s ease-in-out infinite alternate}
+#st2{animation:tw 2.3s ease-in-out infinite alternate-reverse}
+@keyframes tw{from{opacity:.55}to{opacity:1}}
+#field{pointer-events:none}
+#danger{background:linear-gradient(rgba(255,40,80,1),rgba(255,40,80,0) 50%,rgba(255,40,80,1));opacity:0}
+#danger.on{animation:dg .47s ease-in-out infinite alternate}
+@keyframes dg{from{opacity:.12}to{opacity:.22}}
+/* 게임 캔버스는 가운데 플레이 영역 크기만큼만 만든다(위치·폭은 JS가 지정) */
+#cv,#field{right:auto}
+/* 터치·클릭은 화면 전체에서 받는다(플레이 영역 밖을 눌러도 가장 가까운 레인으로 처리되던 기존 동작 유지) */
+#hit{position:fixed;inset:0;touch-action:none}
+/* 점수·진행 바: 값이 바뀔 때만 갱신되는 HTML 요소 */
+#hud{position:fixed;inset:0;pointer-events:none}
+#hudBar{position:absolute;left:0;top:0;width:100%;height:4px;background:rgba(255,255,255,.12);overflow:hidden}
+#hudFill{position:absolute;inset:0;transform-origin:0 0;transform:scaleX(0);will-change:transform}
+#hudScore{position:absolute;right:14px;top:17px;font:800 22px/22px system-ui,sans-serif;color:#fff}
+#hudDiff{position:absolute;right:14px;top:46px;font:800 12px/12px system-ui,sans-serif}
+#overFx{position:fixed;inset:0;background:rgba(20,0,10,.55);opacity:0;pointer-events:none;transition:opacity .4s}
+#overFx b{position:absolute;left:50%;top:42%;transform:translate(-50%,-80%);font:900 56px/1 system-ui,sans-serif;color:#ff4d6d;white-space:nowrap}
+#overFx.on{opacity:1}
+#overFx.on b{animation:ovIn .4s both}
+@keyframes ovIn{from{transform:translate(-50%,-80%) scale(.72)}to{transform:translate(-50%,-80%) scale(1)}}
+/* 느린 기기(자동 품질 1단계 이상): 화면 전체를 매 프레임 다시 합치게 만드는 배경 움직임을 멈춘다 */
+.lowfx canvas.stars{animation:none}
+.lowfx #danger.on{animation:none;opacity:.17}
+#dbg{position:fixed;left:58px;top:calc(14px + env(safe-area-inset-top));z-index:6;font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:rgba(0,0,0,.55);pointer-events:none;font-variant-numeric:tabular-nums}
 .ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(5,3,15,.8);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);text-align:center;padding:16px;overflow:auto;z-index:10;touch-action:pan-y}
 .hidden{display:none!important}
 .logo{font-size:clamp(28px,7vw,46px);font-weight:900;letter-spacing:-1px;background:linear-gradient(90deg,#3ee6ff,#ffd23e,#ff3d7f);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 18px rgba(62,230,255,.35))}
@@ -100,7 +131,14 @@ kbd{display:inline-block;min-width:20px;padding:0 5px;border-radius:5px;backgrou
 </style>
 </head>
 <body>
+<div id="bgBase"></div><div id="bgGlow"></div>
+<canvas id="st1" class="stars"></canvas><canvas id="st2" class="stars"></canvas>
+<canvas id="field" class="hidden"></canvas>
 <canvas id="cv"></canvas>
+<div id="danger"></div><div id="dbg" class="hidden"></div>
+<div id="hud" class="hidden"><div id="hudBar"><i id="hudFill"></i></div><b id="hudScore">0</b><small id="hudDiff"></small></div>
+<div id="overFx"><b>GAME OVER</b></div>
+<div id="hit"></div>
 <button id="pauseBtn" class="hidden">Ⅱ</button>
 
 <div id="titleOv" class="ov">
@@ -778,17 +816,62 @@ function spreadLanes(chart) {
   }
   return a;
 }
+// EXTREME: 같은 레인에 노트가 gap초보다 촘촘하게 붙으면(손가락 연타가 사실상 불가능한 간격) 빈 옆 레인으로 옮기고, 옮길 곳이 없으면 뺀다
+function easeJacks(chart, gap) {
+  const a = chart.slice().sort((x, y) => x.time - y.time), out = [], lastEnd = [-9, -9, -9, -9];
+  for (let i = 0; i < a.length; i++) {
+    const n = a[i];
+    if (n.time - lastEnd[n.lane] < gap) {
+      const busy = a.filter(m => Math.abs(m.time - n.time) < 1e-6).map(m => m.lane);
+      let to = -1;
+      for (let l = 0; l < 4 && to < 0; l++) {
+        if (busy.includes(l) || n.time - lastEnd[l] < .12) continue;
+        if (a.some(m => m.lane === l && m.time > n.time && m.time - n.end < .12)) continue;
+        to = l;
+      }
+      if (to < 0) continue;
+      n.lane = to;
+    }
+    lastEnd[n.lane] = n.end; out.push(n);
+  }
+  return out;
+}
+// 터치 기기: 동시에 눌러야 하는 노트(누르고 있는 롱노트 포함)를 최대 max개로 줄인다.
+// 같은 시각의 노트는 중요도 순(선율 → 반주)으로 정렬돼 있으므로 앞쪽(선율)을 남긴다
+function capChords(chart, max) {
+  const out = []; let holds = [];
+  for (let i = 0; i < chart.length;) {
+    const t = chart[i].time; let j = i;
+    while (j < chart.length && Math.abs(chart[j].time - t) < 1e-6) j++;
+    holds = holds.filter(e => e > t + .02);
+    let room = max - holds.length;
+    for (let k = i; k < j && room > 0; k++, room--) { out.push(chart[k]); if (chart[k].len > 0) holds.push(chart[k].end); }
+    i = j;
+  }
+  return out;
+}
+const TOUCH_CHART = typeof matchMedia === 'function' && matchMedia('(pointer:coarse)').matches;
+const songData = s => s.build ? s.build() : makeSong(s.spec);
 function prepareSong(s) {
   if (s.charts) return s;
-  const data = s.build ? s.build() : makeSong(s.spec);
+  const data = songData(s);
   const tf = tempoFns(s.bpm0, s.bpm1 || s.bpm0, data.beats);
-  for (const e of data.ev) { e.ts = tf.b2s(e.t); e.ds = e.d != null ? tf.b2s(e.t + e.d) - e.ts : 0; }
-  s.ev = data.ev; s.beats = data.beats; s.b2s = tf.b2s; s.s2b = tf.s2b;
+  s.beats = data.beats; s.b2s = tf.b2s; s.s2b = tf.s2b;
   s.end = tf.b2s(data.beats); s.barBeats = (s.spec && s.spec.barBeats) || 4;
   // 난이도별 채보를 미리 전부 확정(초 단위 시간·레인·롱노트 길이)해 두고, 플레이 중에는 읽기만 한다
   s.charts = [0, 1, 2].map(l => chartFor(data.ch, l, tf.b2s));
+  s.charts[2] = easeJacks(s.charts[2], .065);
+  if (TOUCH_CHART) s.charts = s.charts.map(c => capChords(c, 2));
   (s.spread || []).forEach(l => { s.charts[l] = spreadLanes(s.charts[l]); }); // 지정한 난이도만 레인 분산
   return s;
+}
+// 음악 합성용 이벤트 목록: 음악을 만들 때만 새로 만들고, 다 만들면 버린다
+// (곡 목록을 둘러보며 여러 곡을 골라도 수천 개짜리 목록이 곡마다 메모리에 쌓이지 않음)
+function songEvents(s) {
+  prepareSong(s);
+  const ev = songData(s).ev;
+  for (const e of ev) { e.ts = s.b2s(e.t); e.ds = e.d != null ? s.b2s(e.t + e.d) - e.ts : 0; }
+  return ev;
 }
 SONGS.sort((a, b) => a.lv[2] - b.lv[2] || a.lv[0] - b.lv[0]);
 //SONG-END
@@ -833,27 +916,83 @@ function showLoading(s, err) {
 }
 function hideLoading() { loadingId = null; $('loadMsg').classList.add('hidden'); }
 ['pointerdown', 'touchstart', 'touchmove', 'wheel', 'click'].forEach(ev => $('loadMsg').addEventListener(ev, e => { e.stopPropagation(); if (e.cancelable) e.preventDefault(); }, { passive: false }));
-const cv = $('cv'), g = cv.getContext('2d', { alpha: false });
-let W, H, DPR, colX, colW, laneW, judgeY;
-let laneGrad = [], judgeGrad = null, dangerGrad = null;
+const cv = $('cv'), g = cv.getContext('2d');
+const fieldCv = $('field'), fg = fieldCv.getContext('2d');
+const starCv = [$('st1'), $('st2')], starSp = [.35, .8];
+const bgGlow = $('bgGlow'), dangerEl = $('danger'), hitEl = $('hit'), hudEl = $('hud'), hudScore = $('hudScore'), hudFill = $('hudFill'), overFx = $('overFx');
+const isTouch = matchMedia('(pointer:coarse)').matches;
+const STARS = Array.from({ length: 140 }, (_, i) => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.8 + .4, b: Math.random() * .8 + .2, layer: i % 2 }));
+// 그리기 품질: 0 기본 → 1 → 2 로 갈수록 해상도를 낮춘다.
+// 플레이 중 프레임이 계속 낮으면 자동으로 한 단계씩 내려가고 브라우저에 기억된다(주소 끝에 ?q=0 을 붙이면 초기화)
+const QS = [1, .8, .66];
+let q = Math.max(0, Math.min(2, +store.get('q', 0) || 0));
+{ const qp = /[?&]q=([0-2])/.exec(location.search); if (qp) { q = +qp[1]; store.set('q', q); } }
+const PX_BUDGET = 1e6; // 그리는 픽셀 수 상한(약 100만). 화면 1픽셀당 최소 1픽셀은 유지(품질 0일 때)
+let W, H, DPR, colX, colW, laneW, judgeY, NW, NH;
+let laneGlow = [], judgeGrad = null, noteSpr = [], FX0 = 0, FW = 0;
+let perfAcc = 0, perfN = 0;
+function perfReset() { perfAcc = 0; perfN = 0; }
+const NP = 4; // 노트 이미지 여백(빛 번짐 포함)
+// 노트 모양(빛 번짐 + 본체 + 가운데 줄)을 레인 색마다 미리 이미지로 만들어 두고, 플레이 중에는 복사만 한다
+function makeNoteSprite(col) {
+  const s = document.createElement('canvas');
+  s.width = Math.ceil((NW + NP * 2) * DPR); s.height = Math.ceil((NH + NP * 2) * DPR);
+  const x = s.getContext('2d'); x.setTransform(DPR, 0, 0, DPR, 0, 0);
+  x.fillStyle = col; x.globalAlpha = .35; rr(NP - 3, NP - 3, NW + 6, NH + 6, 8, x);
+  x.globalAlpha = 1; rr(NP, NP, NW, NH, 6, x);
+  x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(NP + 6, NP + NH / 2 - 1.5, NW - 12, 3);
+  return s;
+}
+// 레인 배경·구분선·판정선 아래 어두운 영역·키 글자: 화면 크기가 바뀔 때만 그린다
+function drawStaticField() {
+  fg.clearRect(0, 0, W, H);
+  fg.fillStyle = 'rgba(8,6,24,.8)'; fg.fillRect(colX, 0, colW, H);
+  fg.fillStyle = 'rgba(255,255,255,.07)';
+  for (let l = 0; l <= 4; l++) fg.fillRect(colX + l * laneW - .5, 0, 1, H);
+  fg.fillStyle = 'rgba(0,0,0,.45)'; fg.fillRect(colX, judgeY + 2, colW, H - judgeY);
+  if (!isTouch) {
+    fg.font = '700 16px system-ui'; fg.textAlign = 'center'; fg.fillStyle = 'rgba(255,255,255,.4)';
+    for (let l = 0; l < 4; l++) fg.fillText('DFJK'[l], colX + (l + .5) * laneW, judgeY + 34);
+  }
+}
+// 별: 두 장의 이미지(위아래로 이어 붙인 2배 높이)에 한 번만 그리고, 움직임은 CSS transform으로만 처리
+function drawStars() {
+  starCv.forEach((c, li) => {
+    c.width = Math.round(W); c.height = Math.round(H * 2);
+    const x = c.getContext('2d'); x.fillStyle = '#fff';
+    for (const s of STARS) if (s.layer === li) { x.globalAlpha = s.b; x.fillRect(s.x * W, s.y * H, s.r, s.r); x.fillRect(s.x * W, s.y * H + H, s.r, s.r); }
+  });
+}
 function resize() {
   W = innerWidth; H = innerHeight;
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
-  // 해상도가 아주 높은 기기에서는 그리는 픽셀 수를 제한해 프레임 드랍을 막는다
-  const PX_BUDGET = 2.4e6;
-  if (W * H * DPR * DPR > PX_BUDGET) DPR = Math.max(1, Math.sqrt(PX_BUDGET / (W * H)));
-  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  let base = Math.min(window.devicePixelRatio || 1, 2);
+  if (W * H * base * base > PX_BUDGET) base = Math.max(1, Math.sqrt(PX_BUDGET / (W * H)));
+  DPR = base * QS[q];
   colW = Math.min(W * .96, 440); colX = (W - colW) / 2; laneW = colW / 4; judgeY = H * .85;
-  // 매 프레임 새로 만들던 그라디언트는 화면 크기가 바뀔 때만 한 번 만든다
-  laneGrad = LC.map(c => { const lg = g.createLinearGradient(0, judgeY, 0, judgeY - H * .55); lg.addColorStop(0, hexA(c, .32)); lg.addColorStop(1, hexA(c, 0)); return lg; });
+  NW = laneW - 10; NH = Math.max(14, Math.min(22, laneW * .2));
+  // 노트·판정·콤보·게이지는 모두 가운데 플레이 영역(+ 게이지 자리) 안에만 그려진다 → 캔버스를 그 크기로만 만든다.
+  // 매 프레임 화면으로 넘기는 캔버스 픽셀 수가 화면 전체 대비 절반 이하로 줄어든다. 그리는 좌표계는 그대로(화면 기준)
+  FX0 = Math.max(0, Math.floor(colX - 26)); FW = Math.min(W, Math.ceil(colX + colW + 30)) - FX0;
+  for (const [c, x] of [[cv, g], [fieldCv, fg]]) {
+    c.width = Math.round(FW * DPR); c.height = Math.round(H * DPR);
+    c.style.left = FX0 + 'px'; c.style.width = FW + 'px';
+    x.setTransform(DPR, 0, 0, DPR, -FX0 * DPR, 0);
+  }
+  // 레인 불빛: 그라디언트를 매번 칠하지 않고, 1픽셀 폭 이미지로 한 번 그려 두고 늘려서 복사
+  laneGlow = LC.map(c => {
+    const s = document.createElement('canvas'); s.width = 1; s.height = Math.max(2, Math.round(H * .55 * DPR));
+    const x = s.getContext('2d'), lg = x.createLinearGradient(0, s.height, 0, 0);
+    lg.addColorStop(0, hexA(c, .32)); lg.addColorStop(1, hexA(c, 0)); x.fillStyle = lg; x.fillRect(0, 0, 1, s.height);
+    return s;
+  });
   judgeGrad = g.createLinearGradient(colX, 0, colX + colW, 0);
   judgeGrad.addColorStop(0, '#3ee6ff'); judgeGrad.addColorStop(.5, '#ffd23e'); judgeGrad.addColorStop(1, '#3ee6ff');
-  dangerGrad = g.createLinearGradient(0, 0, 0, H);
-  dangerGrad.addColorStop(0, 'rgba(255,40,80,1)'); dangerGrad.addColorStop(.5, 'rgba(255,40,80,0)'); dangerGrad.addColorStop(1, 'rgba(255,40,80,1)');
+  noteSpr = LC.map(makeNoteSprite);
+  drawStaticField(); drawStars();
+  document.body.classList.toggle('lowfx', q > 0);
+  perfReset();
 }
 addEventListener('resize', resize); resize();
-const isTouch = matchMedia('(pointer:coarse)').matches;
-const STARS = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.8 + .4, b: Math.random() * .8 + .2, tw: Math.random() * 2 + .5, ph: Math.random() * 6, sp: Math.random() * .8 + .2 }));
 
 /* ================= AUDIO =================
    곡 전체를 시작 전에 OfflineAudioContext로 한 번에 렌더링해 오디오 버퍼 하나로 만든다.
@@ -957,7 +1096,7 @@ function makeBuffer(len, sr) {
 // (한 번에 렌더링하면 노드가 수천 개 쌓여 렌더링이 곡 길이만큼 느려짐 → 구간별로 하면 훨씬 빠름)
 async function renderSongAudio(s) {
   prepareSong(s);
-  const sr = RENDER_SR, SEG = 6, EV = s.ev;
+  const sr = RENDER_SR, SEG = 6, EV = songEvents(s);
   const out = makeBuffer(Math.ceil((s.end + 2.5) * sr), sr), od = out.getChannelData(0);
   const jobs = [], total = Math.max(1, Math.ceil(s.end / SEG));
   let i = 0, doneN = 0;
@@ -1009,7 +1148,7 @@ function prerender() { clearTimeout(preTimer); preTimer = setTimeout(() => songA
 /* ================= GAME ================= */
 let state = 'title', startTime = 0, st = -9, lat = 0;
 let lanesQ, laneHead, hold, laneDown = [0, 0, 0, 0], laneFlash = [0, 0, 0, 0], ringFx = [0, 0, 0, 0], laneErr = [0, 0, 0, 0], overAt = 0;
-let S_ = null, particles = [], judgeFx = null;
+let S_ = null, judgeFx = null;
 
 /* ----- 부드러운 게임 시계 -----
    ctx.currentTime은 오디오 버퍼 단위(수십 ms)로 뚝뚝 끊겨 증가하고, outputLatency도 플레이 중 바뀔 수 있어서
@@ -1043,7 +1182,7 @@ async function startGame() {
   const s = cur;
   showLoading(s); // 이미 준비된 곡이면 바로 닫혀서 화면에 보이지 않음(0.12초 뒤부터 서서히 나타남)
   let buf;
-  try { buf = await songAudio(s); }
+  try { buf = await songAudio(s); curBuf = buf; }
   catch (e) {
     starting = false; toMenu();
     showLoading(null, true); setTimeout(hideLoading, 2200);
@@ -1059,7 +1198,9 @@ async function startGame() {
   laneHead = [0, 0, 0, 0]; hold = [null, null, null, null]; laneDown = [0, 0, 0, 0];
   laneFlash = [0, 0, 0, 0]; ringFx = [0, 0, 0, 0]; laneErr = [0, 0, 0, 0];
   S_ = { p: 0, gr: 0, gd: 0, m: 0, empty: 0, gauge: 100, failed: false, combo: 0, max: 0, w: 0, total: notes.reduce((a, n) => a + (n.len > 0 ? 2 : 1), 0) };
-  particles.length = 0; judgeFx = null; ptrs.clear(); scoreW = -1;
+  pN = 0; judgeFx = null; ptrs.clear(); scoreW = -1; lastPw = -1; perfReset();
+  hudScore.textContent = '0'; $('hudDiff').textContent = `${DIFFS[diff].name} ${s.lv[diff]}`; $('hudDiff').style.color = DIFFS[diff].color;
+  hudFill.style.background = DIFFS[diff].color; hudFill.style.transform = 'scaleX(0)'; overFx.classList.remove('on');
   src = ctx.createBufferSource(); src.buffer = buf; src.connect(master);
   startTime = ctx.currentTime + LEAD_IN;
   src.start(startTime);
@@ -1080,7 +1221,7 @@ function judge(k, lane) {
   setGauge(k === 'M' ? -MISS_PEN[diff] : GAIN[k]);
   if (k === 'M') { S_.m++; S_.combo = 0; }
   else { if (k === 'P') S_.p++; else if (k === 'GR') S_.gr++; else S_.gd++; S_.combo++; if (S_.combo > S_.max) S_.max = S_.combo; burst(lane, k); }
-  judgeFx = { k, t: performance.now() };
+  JFX.k = k; JFX.t = performance.now(); judgeFx = JFX; // 판정 표시 객체는 하나를 계속 재사용
 }
 // t = 입력이 일어난 순간의 곡 시간(초)
 function press(lane, t) {
@@ -1101,7 +1242,7 @@ function press(lane, t) {
 }
 function gameOver() {
   if (state !== 'play') return;
-  state = 'over'; S_.failed = true; overAt = performance.now();
+  state = 'over'; S_.failed = true; overAt = performance.now(); overFx.classList.add('on');
   $('pauseBtn').classList.add('hidden');
   try { master.gain.setTargetAtTime(0, ctx.currentTime, .15); } catch (e) {}
   setTimeout(() => { if (state === 'over') finish(); }, 1400);
@@ -1143,22 +1284,38 @@ function finish() {
   lbPrepareSubmit(key, score, acc, S_.failed);
   $('resultOv').classList.remove('hidden');
 }
+let curBuf = null, pauseT = 0, resumeAt = 0;
+const RESUME_LEAD = 3; // '계속하기' 후 카운트다운(초)
 function pause() {
-  if (state !== 'play') return;
+  if (state !== 'play' && state !== 'resume') return;
+  if (state === 'play') pauseT = audioSongTime(); // 멈춘 시점의 곡 시간(카운트다운 중에 다시 멈추면 처음 멈춘 지점 유지)
   state = 'pause'; ctx.suspend();
   // 일시정지 중에는 손을 떼는 이벤트를 놓칠 수 있으므로 누름 상태를 초기화(롱노트는 재개할 때 판정)
   ptrs.clear(); laneDown = [0, 0, 0, 0];
   $('pauseOv').classList.remove('hidden'); $('pauseBtn').classList.add('hidden');
 }
+// 계속하기: 멈춘 지점 3초 전 화면부터 노트가 다시 흘러오고(입력은 받지 않음), 카운트다운이 끝나는 순간
+// 음악이 멈춘 지점부터 정확히 이어진다. '곡 시간 = 오디오 시계 - 시작 시각' 계산은 그대로이고 시작 시각만 다시 잡는다.
+// (오디오 재개를 버튼을 누른 순간에 호출해야 iOS에서도 소리가 막히지 않는다)
 function resume() {
   if (state !== 'pause') return;
-  const t = audioSongTime(); // 멈춘 시점의 곡 시간
-  state = 'play'; ctx.resume(); clk.ok = false;
+  stopSrc();
+  try { ctx.resume(); } catch (e) {}
+  const pos = pauseT + lat + offsetMs / 1000, c1 = ctx.currentTime + RESUME_LEAD;
+  src = ctx.createBufferSource(); src.buffer = curBuf; src.connect(master);
+  if (pos >= 0) src.start(c1, pos); else src.start(c1 - pos);
+  startTime = c1 - pos;
+  clk.ok = false; perfReset();
+  state = 'resume'; resumeAt = performance.now();
   $('pauseOv').classList.add('hidden'); $('pauseBtn').classList.remove('hidden');
-  for (let l = 0; l < 4; l++) if (hold[l] && laneDown[l] === 0) { laneDown[l] = 1; releaseLane(l, t); }
+}
+function endResume() {
+  state = 'play'; perfReset();
+  // 롱노트를 누르던 중에 멈췄다면 기존과 똑같이 '멈춘 시점'으로 판정
+  for (let l = 0; l < 4; l++) if (hold[l] && laneDown[l] === 0) { laneDown[l] = 1; releaseLane(l, pauseT); }
 }
 function toMenu() {
-  stopSrc();
+  stopSrc(); curBuf = null; overFx.classList.remove('on');
   if (master) { try { master.disconnect(); } catch (e) {} master = null; }
   state = 'title';
   ['pauseOv', 'resultOv'].forEach(id => $(id).classList.add('hidden'));
@@ -1260,7 +1417,7 @@ const KEYS = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3 };
 addEventListener('keydown', e => {
   const tg = e.target && e.target.tagName;
   if (tg === 'INPUT' || tg === 'TEXTAREA') return; // 별명 입력 중에는 게임 단축키 무시
-  if (e.code === 'Escape') { if (state === 'play') pause(); else if (state === 'pause') resume(); return; }
+  if (e.code === 'Escape') { if (state === 'play' || state === 'resume') pause(); else if (state === 'pause') resume(); return; }
   if (state === 'title') {
     if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); startGame(); }
     if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { e.preventDefault(); selectSong((songIdx + (e.code === 'ArrowUp' ? -1 : 1) + SONGS.length) % SONGS.length); }
@@ -1291,7 +1448,7 @@ function ptrUp(id, ms) {
   releaseLane(l, songTimeAt(ms));
 }
 if (window.PointerEvent) {
-  cv.addEventListener('pointerdown', e => {
+  hitEl.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     ptrDown(e.pointerId, e.clientX, evMs(e));
@@ -1300,14 +1457,14 @@ if (window.PointerEvent) {
   addEventListener('pointerup', up); addEventListener('pointercancel', up);
 } else {
   // 포인터 이벤트가 없는 구형 브라우저용 터치 처리
-  cv.addEventListener('touchstart', e => { const ms = evMs(e); for (const tc of e.changedTouches) ptrDown('t' + tc.identifier, tc.clientX, ms); }, { passive: false });
+  hitEl.addEventListener('touchstart', e => { const ms = evMs(e); for (const tc of e.changedTouches) ptrDown('t' + tc.identifier, tc.clientX, ms); }, { passive: false });
   const tend = e => { const ms = evMs(e); for (const tc of e.changedTouches) ptrUp('t' + tc.identifier, ms); };
   addEventListener('touchend', tend); addEventListener('touchcancel', tend);
-  cv.addEventListener('mousedown', e => ptrDown('m', e.clientX, evMs(e)));
+  hitEl.addEventListener('mousedown', e => ptrDown('m', e.clientX, evMs(e)));
   addEventListener('mouseup', e => ptrUp('m', evMs(e)));
 }
 // iOS/안드로이드의 길게 누르기·돋보기·스크롤·더블탭 확대 같은 브라우저 제스처가 터치를 가로채지 않도록 막는다
-['touchstart', 'touchmove', 'touchend'].forEach(ev => cv.addEventListener(ev, e => { if (e.cancelable) e.preventDefault(); }, { passive: false }));
+['touchstart', 'touchmove', 'touchend'].forEach(ev => hitEl.addEventListener(ev, e => { if (e.cancelable) e.preventDefault(); }, { passive: false }));
 addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 addEventListener('pagehide', pause);
@@ -1336,45 +1493,104 @@ prerender();
 /* ================= RENDER ================= */
 function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
 function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
-function rr(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fill(); }
+function rr(x, y, w, h, r, c = g) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); c.fill(); }
+// 파티클 풀: 미리 만들어 둔 220개를 계속 재사용(플레이 중 새 객체를 만들지 않아 가비지 컬렉션 끊김 방지)
 const MAX_PARTICLES = 220;
+const PPOOL = Array.from({ length: MAX_PARTICLES }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, c: '' }));
+let pN = 0;
+function addParticle(x, y, vx, vy, life, c) {
+  if (pN >= MAX_PARTICLES) return;
+  const p = PPOOL[pN++]; p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.life = life; p.c = c;
+}
+const JFX = { k: 'P', t: 0 };
 function burst(lane, k) {
   const x = colX + (lane + .5) * laneW, n = k === 'P' ? 12 : 7;
   ringFx[lane] = 1;
-  for (let i = 0; i < n && particles.length < MAX_PARTICLES; i++) particles.push({ x, y: judgeY, vx: (Math.random() - .5) * 7, vy: -Math.random() * 7 - 2, life: 1, c: k === 'P' ? (Math.random() < .5 ? '#fff6b0' : LC[lane]) : LC[lane] });
+  for (let i = 0; i < n; i++) addParticle(x, judgeY, (Math.random() - .5) * 7, -Math.random() * 7 - 2, 1, k === 'P' ? (Math.random() < .5 ? '#fff6b0' : LC[lane]) : LC[lane]);
 }
-let scoreW = -1, scoreTxt = '0';
+// 글자 이미지 캐시: 글자는 내용·색·해상도가 바뀔 때만 작은 캔버스에 한 번 그리고, 매 프레임에는 복사만 한다
+function TextSpr(font, px, align) { this.font = font; this.px = px; this.align = align; this.c = document.createElement('canvas'); this.v = null; this.col = null; this.dpr = 0; }
+TextSpr.prototype.set = function (v, color) {
+  if (v === this.v && color === this.col && DPR === this.dpr) return this;
+  this.v = v; this.col = color; this.dpr = DPR;
+  const txt = String(v), c = this.c, x = c.getContext('2d');
+  x.font = this.font; this.tw = x.measureText(txt).width;
+  this.base = Math.ceil(this.px * 1.15) + 2; this.w = Math.ceil(this.tw) + 8; this.h = this.base + Math.ceil(this.px * .35) + 2;
+  c.width = Math.max(1, Math.ceil(this.w * DPR)); c.height = Math.max(1, Math.ceil(this.h * DPR));
+  x.setTransform(DPR, 0, 0, DPR, 0, 0); x.font = this.font; x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillStyle = color;
+  x.fillText(txt, 4, this.base);
+  return this;
+};
+// (x, y)는 기존 fillText와 같은 기준점(정렬 기준 x, 글자 기준선 y), s는 크기 배율
+TextSpr.prototype.draw = function (x, y, s = 1) {
+  const ox = this.align === 'center' ? 4 + this.tw / 2 : this.align === 'right' ? 4 + this.tw : 4;
+  g.drawImage(this.c, x - ox * s, y - this.base * s, this.w * s, this.h * s);
+};
+const JSPR = { P: new TextSpr('900 41px system-ui', 41, 'center'), GR: new TextSpr('900 41px system-ui', 41, 'center'), GD: new TextSpr('900 41px system-ui', 41, 'center'), M: new TextSpr('900 41px system-ui', 41, 'center') };
+const comboSpr = new TextSpr('900 52px system-ui', 52, 'center'), comboLbl = new TextSpr('700 13px system-ui', 13, 'center');
+const cdSpr = new TextSpr('900 64px system-ui', 64, 'center'), titleSpr = new TextSpr('800 18px system-ui', 18, 'center');
+const gaugeSpr = new TextSpr('800 10px system-ui', 10, 'center');
+let scoreW = -1, lastPw = -1, lastGauge = -1, lastStar = [NaN, NaN];
 let lastFrame = performance.now();
+let lastGlow = -1, lastActive = null, lastDanger = false, drewLast = true;
+const DEBUG = /[?&]debug\b/.test(location.search);
+let dbgAcc = 0, dbgN = 0, dbgWorst = 0, dbgAt = 0;
+if (DEBUG) $('dbg').classList.remove('hidden');
 function frame(now) {
-  const dt = Math.min(50, Math.max(0, now - lastFrame)) / 16.67; lastFrame = now;
-  if (state === 'play') { syncClock(now); st = songTimeAt(now); update(st); }
+  const raw = Math.max(0, now - lastFrame);
+  const dt = Math.min(50, raw) / 16.67; lastFrame = now;
+  if (state === 'play' || state === 'resume') {
+    syncClock(now); st = songTimeAt(now);
+    if (state === 'resume') {
+      if (st >= pauseT) endResume();
+      else if (ctx.state !== 'running' && now - resumeAt > 1500) pause(); // 오디오가 다시 켜지지 않으면 일시정지 화면으로 되돌림
+    }
+    if (state === 'play') update(st);
+  }
   const active = state !== 'title' && state !== 'loading';
   const t = active ? st : now / 1000;
-  g.fillStyle = '#05030f'; g.fillRect(0, 0, W, H);
   let pulse = 0;
   if (active && t > 0 && t < cur.end) { const b = cur.s2b(t); pulse = Math.pow(1 - (b - Math.floor(b)), 3); }
+  // 배경 빛: 그라디언트를 다시 그리지 않고 미리 만든 층의 투명도만 바꾼다
   const energy = S_ && active ? Math.min(S_.combo / 150, 1) : .3;
-  const grd = g.createRadialGradient(W / 2, H * .38, 0, W / 2, H * .38, Math.max(W, H) * .65);
-  grd.addColorStop(0, `rgba(120,60,255,${(.16 + .32 * energy + .14 * pulse).toFixed(3)})`);
-  grd.addColorStop(.45, `rgba(40,180,255,${(.05 + .14 * energy).toFixed(3)})`);
-  grd.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = grd; g.fillRect(0, 0, W, H);
-  const drift = active ? Math.max(t, 0) * 40 : now / 1000 * 8;
-  g.fillStyle = '#fff';
-  for (const s of STARS) {
-    g.globalAlpha = (.3 + .7 * Math.abs(Math.sin(now / 1000 * s.tw + s.ph))) * s.b;
-    g.fillRect(s.x * W, (s.y * H + drift * s.sp) % H, s.r, s.r);
+  // 느린 기기(품질 1단계 이상)에서는 박자 펄스를 빼고 콤보에 따른 밝기만 큰 단위로 바꾼다(화면 전체 재합성 횟수 감소)
+  const fullFx = q === 0;
+  const glow = fullFx ? Math.round((.32 * energy + .14 * pulse) / .46 * 100) / 100 : Math.round(.32 * energy / .46 * 10) / 10;
+  if (glow !== lastGlow) { bgGlow.style.opacity = glow; lastGlow = glow; }
+  if (fullFx || lastStar[0] !== lastStar[0]) {
+    const drift = active ? Math.max(t, 0) * 40 : now / 1000 * 8;
+    for (let i = 0; i < 2; i++) {
+      const v = Math.round(((drift * starSp[i]) % H - H) * 2) / 2;
+      if (v !== lastStar[i]) { starCv[i].style.transform = `translate3d(0,${v}px,0)`; lastStar[i] = v; }
+    }
   }
-  g.globalAlpha = 1;
-  if (active && lanesQ) drawField(t, dt, pulse);
+  if (active !== lastActive) { fieldCv.classList.toggle('hidden', !active); hudEl.classList.toggle('hidden', !active); lastActive = active; }
+  const danger = !!(active && state === 'play' && S_ && S_.gauge <= 25);
+  if (danger !== lastDanger) { dangerEl.classList.toggle('on', danger); lastDanger = danger; }
+  if (active && lanesQ) { g.clearRect(FX0, 0, FW, H); drawField(t, dt, pulse); drewLast = true; }
+  else if (drewLast) { g.clearRect(FX0, 0, FW, H); drewLast = false; }
+  // 자동 품질 조절: 카운트다운이 끝난 뒤 2초 동안의 평균 프레임 간격이 26ms(약 38fps)보다 길면 해상도를 한 단계 낮춘다
+  if (state === 'play' && st > 1 && raw < 250) {
+    perfAcc += raw; perfN++;
+    if (perfAcc >= 2000) {
+      if (perfAcc / perfN > 26 && q < 2) { q++; store.set('q', q); resize(); }
+      perfReset();
+    }
+  }
+  if (DEBUG && raw < 1000) {
+    dbgAcc += raw; dbgN++; if (raw > dbgWorst) dbgWorst = raw;
+    if (now - dbgAt > 500) {
+      $('dbg').textContent = `${Math.round(1000 * dbgN / Math.max(1, dbgAcc))} fps · 최장 ${Math.round(dbgWorst)}ms · ${cv.width}×${cv.height} · 품질 ${q}`;
+      dbgAcc = dbgN = dbgWorst = 0; dbgAt = now;
+    }
+  }
   requestAnimationFrame(frame);
 }
 function drawField(t, dt, pulse) {
   const pps = H * .18 * speed;
-  g.fillStyle = 'rgba(8,6,24,.8)'; g.fillRect(colX, 0, colW, H);
   for (let l = 0; l < 4; l++) {
     const a = Math.max(laneFlash[l], laneDown[l] > 0 ? .55 : 0);
-    if (a > .01) { g.globalAlpha = a; g.fillStyle = laneGrad[l]; g.fillRect(colX + l * laneW, 0, laneW, judgeY); }
+    if (a > .01) { g.globalAlpha = a; g.drawImage(laneGlow[l], colX + l * laneW, judgeY - H * .55, laneW, H * .55); }
     laneFlash[l] *= Math.pow(.85, dt);
     if (laneErr[l] > .01) {
       g.globalAlpha = .28 * laneErr[l]; g.fillStyle = '#ff3c5a'; g.fillRect(colX + l * laneW, judgeY - H * .25, laneW, H * .25);
@@ -1382,8 +1598,6 @@ function drawField(t, dt, pulse) {
     }
   }
   g.globalAlpha = 1;
-  g.fillStyle = 'rgba(255,255,255,.07)';
-  for (let l = 0; l <= 4; l++) g.fillRect(colX + l * laneW - .5, 0, 1, H);
   // 마디선
   const bb = cur.barBeats, nBars = Math.floor(cur.beats / bb);
   g.fillStyle = 'rgba(255,255,255,.12)';
@@ -1393,7 +1607,7 @@ function drawField(t, dt, pulse) {
     if (y <= judgeY) g.fillRect(colX, y, colW, 1);
   }
   // 노트
-  const nh = Math.max(14, Math.min(22, laneW * .2));
+  const nh = NH;
   for (let l = 0; l < 4; l++) {
     const q = lanesQ[l], x = colX + l * laneW + 5, w = laneW - 10;
     for (let i = laneHead[l]; i < q.length; i++) {
@@ -1408,13 +1622,12 @@ function drawField(t, dt, pulse) {
         g.globalAlpha = .9; g.fillRect(x + w * .12, ye - 3, w * .76, 6);
         g.globalAlpha = 1;
         drawNote(x, yh, w, nh, l);
-        if (holding && particles.length < MAX_PARTICLES && Math.random() < .5) particles.push({ x: x + Math.random() * w, y: judgeY, vx: (Math.random() - .5) * 2, vy: -Math.random() * 4 - 1, life: .7, c: LC[l] });
+        if (holding && Math.random() < .5) addParticle(x + Math.random() * w, judgeY, (Math.random() - .5) * 2, -Math.random() * 4 - 1, .7, LC[l]);
       } else drawNote(x, y, w, nh, l);
     }
   }
   // 판정선
   g.fillStyle = judgeGrad; g.globalAlpha = .75 + .25 * pulse; g.fillRect(colX, judgeY - 2, colW, 4); g.globalAlpha = 1;
-  g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(colX, judgeY + 2, colW, H - judgeY);
   g.font = '700 16px system-ui'; g.textAlign = 'center'; g.lineWidth = 3;
   for (let l = 0; l < 4; l++) {
     const cx = colX + (l + .5) * laneW;
@@ -1425,13 +1638,12 @@ function drawField(t, dt, pulse) {
       g.globalAlpha = 1;
       ringFx[l] *= Math.pow(.86, dt);
     }
-    if (!isTouch) { g.fillStyle = 'rgba(255,255,255,.4)'; g.fillText('DFJK'[l], cx, judgeY + 34); }
   }
   // 파티클 (배열 재배치 없이 끝 원소와 바꿔 제거)
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
+  for (let i = pN - 1; i >= 0; i--) {
+    const p = PPOOL[i];
     p.x += p.vx * dt; p.y += p.vy * dt; p.vy += .25 * dt; p.life -= .035 * dt;
-    if (p.life <= 0) { particles[i] = particles[particles.length - 1]; particles.pop(); continue; }
+    if (p.life <= 0) { PPOOL[i] = PPOOL[pN - 1]; PPOOL[pN - 1] = p; pN--; continue; } // 끝 원소와 자리만 바꿔 반납
     g.globalAlpha = p.life; g.fillStyle = p.c; g.fillRect(p.x - 2, p.y - 2, 4, 4);
   }
   g.globalAlpha = 1;
@@ -1440,22 +1652,20 @@ function drawField(t, dt, pulse) {
   if (judgeFx) {
     const age = performance.now() - judgeFx.t;
     if (age < 500) {
-      const [txt, col] = JTXT[judgeFx.k], sc = 1 + .35 * Math.max(0, 1 - age / 90);
+      const jt = JTXT[judgeFx.k], sc = 1 + .35 * Math.max(0, 1 - age / 90);
       g.globalAlpha = age > 300 ? 1 - (age - 300) / 200 : 1;
-      g.fillStyle = col; g.font = `900 ${Math.round(30 * sc)}px system-ui`;
-      g.fillText(txt, W / 2, judgeY - H * .26);
+      JSPR[judgeFx.k].set(jt[0], jt[1]).draw(W / 2, judgeY - H * .26, sc / 1.35);
       g.globalAlpha = 1;
     }
   }
   if (S_.combo >= 3) {
-    g.fillStyle = 'rgba(255,255,255,.9)'; g.font = '900 52px system-ui';
-    g.fillText(S_.combo, W / 2, judgeY - H * .36);
-    g.font = '700 13px system-ui'; g.fillStyle = 'rgba(255,255,255,.55)';
-    g.fillText('COMBO', W / 2, judgeY - H * .36 + 20);
+    comboSpr.set(S_.combo, 'rgba(255,255,255,.9)').draw(W / 2, judgeY - H * .36);
+    comboLbl.set('COMBO', 'rgba(255,255,255,.55)').draw(W / 2, judgeY - H * .36 + 20);
   }
-  if (t < 0) {
-    g.font = '900 64px system-ui'; g.fillStyle = 'rgba(255,255,255,.85)'; g.fillText(Math.ceil(-t), W / 2, H * .4);
-    g.font = '800 18px system-ui'; g.fillStyle = 'rgba(255,255,255,.7)'; g.fillText(cur.title, W / 2, H * .4 + 34);
+  if (state === 'resume') cdSpr.set(Math.max(1, Math.ceil(pauseT - t)), 'rgba(255,255,255,.85)').draw(W / 2, H * .4);
+  else if (t < 0) {
+    cdSpr.set(Math.ceil(-t), 'rgba(255,255,255,.85)').draw(W / 2, H * .4);
+    titleSpr.set(cur.title, 'rgba(255,255,255,.7)').draw(W / 2, H * .4 + 34);
   }
   // 에너지 게이지
   const gv = S_.gauge / 100, gx = colX + colW + 14 + 12 <= W ? colX + colW + 6 : colX + colW - 14;
@@ -1463,32 +1673,15 @@ function drawField(t, dt, pulse) {
   g.fillStyle = 'rgba(255,255,255,.1)'; rr(gx, gTop, 10, gH, 5);
   const gcol = gv > .5 ? '#5effa1' : gv > .25 ? '#ffd23e' : '#ff4d6d';
   if (gv > 0) { g.fillStyle = gcol; g.globalAlpha = gv <= .25 ? .6 + .4 * Math.abs(Math.sin(performance.now() / 120)) : 1; rr(gx, gTop + gH * (1 - gv), 10, gH * gv, 5); g.globalAlpha = 1; }
-  g.fillStyle = 'rgba(255,255,255,.6)'; g.font = '800 10px system-ui'; g.textAlign = 'center'; g.fillText('⚡' + Math.round(S_.gauge), gx + 5, gTop - 8);
-  if (gv <= .25 && state === 'play') {
-    g.globalAlpha = .12 + .1 * Math.abs(Math.sin(performance.now() / 150));
-    g.fillStyle = dangerGrad; g.fillRect(0, 0, W, H); g.globalAlpha = 1;
-  }
-  if (state === 'over') {
-    const age = Math.min(1, (performance.now() - overAt) / 400);
-    g.fillStyle = `rgba(20,0,10,${.55 * age})`; g.fillRect(0, 0, W, H);
-    g.textAlign = 'center'; g.globalAlpha = age; g.fillStyle = '#ff4d6d'; g.font = `900 ${Math.round(40 + 16 * age)}px system-ui`;
-    g.fillText('GAME OVER', W / 2, H * .42); g.globalAlpha = 1;
-  }
-  // HUD (점수 문자열은 점수가 바뀔 때만 다시 만든다)
-  if (S_.w !== scoreW) { scoreW = S_.w; scoreTxt = fmt(Math.round(S_.w / S_.total * 1e6)); }
-  g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(0, 0, W, 4);
-  g.fillStyle = DIFFS[diff].color; g.fillRect(0, 0, W * Math.max(0, Math.min(1, t / cur.end)), 4);
-  g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = '800 22px system-ui';
-  g.fillText(scoreTxt, W - 14, 38);
-  g.font = '800 12px system-ui'; g.fillStyle = DIFFS[diff].color;
-  g.fillText(`${DIFFS[diff].name} ${cur.lv[diff]}`, W - 14, 56);
+  const gn = Math.round(S_.gauge);
+  if (gn !== lastGauge || gaugeSpr.dpr !== DPR) { lastGauge = gn; gaugeSpr.set('⚡' + gn, 'rgba(255,255,255,.6)'); } // 값이 바뀔 때만 다시 그림
+  gaugeSpr.draw(gx + 5, gTop - 8);
+  // HUD: 점수·진행 바는 HTML 요소라 값이 바뀔 때만 갱신(GAME OVER 화면도 CSS로 처리)
+  if (S_.w !== scoreW) { scoreW = S_.w; hudScore.textContent = fmt(Math.round(S_.w / S_.total * 1e6)); }
+  const pw = Math.round(Math.max(0, Math.min(1, t / cur.end)) * 1000);
+  if (pw !== lastPw) { hudFill.style.transform = `scaleX(${pw / 1000})`; lastPw = pw; }
 }
-function drawNote(x, y, w, h, l) {
-  g.fillStyle = LC[l];
-  g.globalAlpha = .35; rr(x - 3, y - h / 2 - 3, w + 6, h + 6, 8);
-  g.globalAlpha = 1; rr(x, y - h / 2, w, h, 6);
-  g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(x + 6, y - 1.5, w - 12, 3);
-}
+function drawNote(x, y, w, h, l) { g.drawImage(noteSpr[l], x - NP, y - h / 2 - NP, w + NP * 2, h + NP * 2); }
 requestAnimationFrame(frame);
 </script>
 </body>
